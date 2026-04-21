@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtuozzo Platform: Advanced TCO Calculator</title>
+    <style>
+        :root {
+            --primary: #0052CC;
+            --secondary: #172B4D;
+            --background: #F4F5F7;
+            --border: #DFE1E6;
+            --card-bg: #FFFFFF;
+            --text-muted: #5E6C84;
+            --hw-color: #36B37E;
+            --colo-color: #FFAB00;
+            --staff-color: #FF5630;
+            --vz-comp-color: #6554C0;
+            --vz-stor-color: #00B8D9;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--background);
+            color: var(--secondary);
+            margin: 0;
+            padding: 30px 15px;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 1.2fr;
+            gap: 25px;
+        }
+        @media (max-width: 850px) {
+            .container { grid-template-columns: 1fr; }
+        }
+        .panel {
+            background: var(--card-bg);
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            border: 1px solid var(--border);
+        }
+        h2 { margin-top: 0; border-bottom: 2px solid var(--border); padding-bottom: 10px; font-size: 1.1rem; }
+        .form-group { margin-bottom: 15px; }
+        label { display: flex; justify-content: space-between; font-weight: 500; font-size: 0.85rem; margin-bottom: 4px; }
+        input[type="number"], input[type="range"] { width: 100%; box-sizing: border-box; }
+        input[type="number"] { padding: 8px; border: 1px solid var(--border); border-radius: 4px; }
+        .val-display { color: var(--primary); font-weight: bold; font-size: 1rem;}
+        
+        .hero-box {
+            background: var(--secondary);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .hero-box .amount { font-size: 2.8rem; font-weight: bold; margin: 5px 0; }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: var(--background);
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid var(--border);
+        }
+        .stat-card .label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; }
+        .stat-card .value { font-size: 1.4rem; font-weight: bold; color: var(--primary); margin-top: 5px;}
+
+        .breakdown-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+        .indicator { width: 12px; height: 12px; border-radius: 50%; display: inline-block; margin-right: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="panel">
+        <h2>Infrastructure Architecture</h2>
+        <div class="form-group">
+            <label>Compute Nodes <span class="val-display" id="valComputeNodes">5</span></label>
+            <input type="range" id="computeNodes" min="1" max="100" value="5">
+        </div>
+        <div class="form-group">
+            <label>Storage Nodes <span class="val-display" id="valStorageNodes">3</span></label>
+            <input type="range" id="storageNodes" min="0" max="100" value="3">
+        </div>
+
+        <h2 style="margin-top:25px;">Unit Economics</h2>
+        <div class="form-group">
+            <label>Cores per Compute Node <span class="val-display"></span></label>
+            <input type="number" id="coresPerNode" value="64">
+        </div>
+        <div class="form-group">
+            <label>Usable Capacity per Storage Node (TB) <span class="val-display"></span></label>
+            <input type="number" id="tbPerNode" value="100">
+        </div>
+        <div class="form-group">
+            <label>HW Cost per Compute Node ($) <span class="val-display"></span></label>
+            <input type="number" id="hwCostCompute" value="22000">
+        </div>
+        <div class="form-group">
+            <label>HW Cost per Storage Node ($) <span class="val-display"></span></label>
+            <input type="number" id="hwCostStorage" value="12000">
+        </div>
+        <div class="form-group">
+            <label>Datacenter Colo per Node ($/Mo) <span class="val-display"></span></label>
+            <input type="number" id="coloCost" value="230">
+        </div>
+        <div class="form-group">
+            <label>Virtuozzo Storage License ($/TB/Mo) <span class="val-display"></span></label>
+            <input type="number" id="vzStorageLic" value="10">
+        </div>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 15px;">
+            * Virtuozzo Compute License ($/Core) is automatically tiered based on total scale.<br>
+            * Staffing costs are automatically calculated using the standard step-function matrix.
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="hero-box">
+            <div style="font-size:0.9rem; text-transform: uppercase; letter-spacing: 1px;">Total Monthly Platform TCO</div>
+            <div class="amount" id="outTotalMo">$0</div>
+            <div style="font-size: 0.85rem; opacity: 0.8;">Fully burdened: HW, Colo, Staffing, and Software</div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Active Compute Tier Rate</div>
+                <div class="value" id="outActiveTier">$0.00 <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">/core</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Effective Compute TCO</div>
+                <div class="value" id="outEffectiveCore">$0.00 <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">/core</span></div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Compute Cores</div>
+                <div class="value" id="outTotalCores">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Total Usable Storage</div>
+                <div class="value" id="outTotalTB">0 TB</div>
+            </div>
+        </div>
+
+        <h2>Monthly Cost Breakdown</h2>
+        <div class="breakdown-item">
+            <div><span class="indicator" style="background: var(--hw-color);"></span>HW Amortization (36mo)</div>
+            <strong id="outHw">$0</strong>
+        </div>
+        <div class="breakdown-item">
+            <div><span class="indicator" style="background: var(--colo-color);"></span>Datacenter Colocation</div>
+            <strong id="outColo">$0</strong>
+        </div>
+        <div class="breakdown-item">
+            <div><span class="indicator" style="background: var(--staff-color);"></span>Staffing / People Cost</div>
+            <strong id="outStaff">$0</strong>
+        </div>
+        <div class="breakdown-item">
+            <div><span class="indicator" style="background: var(--vz-comp-color);"></span>VZ Compute Licensing</div>
+            <strong id="outVzComp">$0</strong>
+        </div>
+        <div class="breakdown-item" style="border-bottom: none;">
+            <div><span class="indicator" style="background: var(--vz-stor-color);"></span>VZ Storage Licensing</div>
+            <strong id="outVzStor">$0</strong>
+        </div>
+    </div>
+</div>
+
+<script>
+    const formatCurrency = (num) => '$' + num.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+
+    function calculateTCO() {
+        // 1. Get Inputs
+        const computeNodes = parseFloat(document.getElementById('computeNodes').value);
+        const storageNodes = parseFloat(document.getElementById('storageNodes').value);
+        const coresPerNode = parseFloat(document.getElementById('coresPerNode').value);
+        const tbPerNode = parseFloat(document.getElementById('tbPerNode').value);
+        const hwCostCompute = parseFloat(document.getElementById('hwCostCompute').value);
+        const hwCostStorage = parseFloat(document.getElementById('hwCostStorage').value);
+        const coloCost = parseFloat(document.getElementById('coloCost').value);
+        const vzStorageLic = parseFloat(document.getElementById('vzStorageLic').value);
+
+        // Update Slider Labels
+        document.getElementById('valComputeNodes').innerText = computeNodes;
+        document.getElementById('valStorageNodes').innerText = storageNodes;
+
+        // 2. Compute Tiers & Core Math
+        const totalCores = computeNodes * coresPerNode;
+        let tierRate = 10.00; // Pay-G fallback
+        if (totalCores <= 200) tierRate = 9.40;
+        else if (totalCores <= 250) tierRate = 8.80;
+        else if (totalCores <= 500) tierRate = 7.90;
+        else if (totalCores <= 1000) tierRate = 6.20;
+        else tierRate = 5.00;
+
+        const monthlyVzComp = totalCores * tierRate;
+
+        // 3. Storage Math
+        const totalTB = storageNodes * tbPerNode;
+        const monthlyVzStor = totalTB * vzStorageLic;
+
+        // 4. Infrastructure & OPEX Math
+        const totalNodes = computeNodes + storageNodes;
+        const monthlyHw = ((computeNodes * hwCostCompute) + (storageNodes * hwCostStorage)) / 36;
+        const monthlyColo = totalNodes * coloCost;
+
+        // 5. Staffing Step-Function Math (from XLS)
+        // Base FTE = $35k. Block sizes: 5 up to 20 nodes, then 7 up to 50+.
+        const staffAnnual = 35000 
+            + Math.floor(Math.max(Math.min(totalNodes, 20) - 5, 0) / 5) * 14000 
+            + Math.floor(Math.max(totalNodes - 20, 0) / 7) * 9800;
+        const monthlyStaff = staffAnnual / 12;
+
+        // 6. Totals & Effective Costs
+        const totalMo = monthlyHw + monthlyColo + monthlyVzComp + monthlyVzStor + monthlyStaff;
+        
+        // Effective Compute Cost isolates compute hardware/colo to show true $/core/mo
+        const computeHwMo = (computeNodes * hwCostCompute) / 36;
+        const computeColoMo = computeNodes * coloCost;
+        // Allocating a proportional amount of staffing to compute based on node count
+        const computeStaffMo = monthlyStaff * (computeNodes / totalNodes || 0); 
+        const effectiveCoreCost = (computeHwMo + computeColoMo + monthlyVzComp + computeStaffMo) / totalCores;
+
+        // 7. Render Updates
+        document.getElementById('outTotalMo').innerText = formatCurrency(totalMo);
+        document.getElementById('outActiveTier').innerHTML = `$${tierRate.toFixed(2)} <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">/core</span>`;
+        document.getElementById('outEffectiveCore').innerHTML = `$${effectiveCoreCost.toFixed(2)} <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">/core</span>`;
+        document.getElementById('outTotalCores').innerText = totalCores.toLocaleString();
+        document.getElementById('outTotalTB').innerText = totalTB.toLocaleString() + ' TB';
+
+        document.getElementById('outHw').innerText = formatCurrency(monthlyHw);
+        document.getElementById('outColo').innerText = formatCurrency(monthlyColo);
+        document.getElementById('outStaff').innerText = formatCurrency(monthlyStaff);
+        document.getElementById('outVzComp').innerText = formatCurrency(monthlyVzComp);
+        document.getElementById('outVzStor').innerText = formatCurrency(monthlyVzStor);
+    }
+
+    // Attach Listeners
+    document.querySelectorAll('input').forEach(input => {
+        input.addEventListener('input', calculateTCO);
+    });
+
+    // Init
+    calculateTCO();
+</script>
+
+</body>
+</html>
