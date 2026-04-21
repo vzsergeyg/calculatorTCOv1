@@ -45,8 +45,8 @@
         h2 { margin-top: 0; border-bottom: 2px solid var(--border); padding-bottom: 10px; font-size: 1.1rem; }
         .form-group { margin-bottom: 15px; }
         label { display: flex; justify-content: space-between; font-weight: 500; font-size: 0.85rem; margin-bottom: 4px; }
-        input[type="number"], input[type="range"] { width: 100%; box-sizing: border-box; }
-        input[type="number"] { padding: 8px; border: 1px solid var(--border); border-radius: 4px; }
+        input[type="number"], input[type="range"], select { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid var(--border); border-radius: 4px; }
+        select { background-color: #FAFBFC; font-weight: 500;}
         .val-display { color: var(--primary); font-weight: bold; font-size: 1rem;}
         
         .hero-box {
@@ -74,6 +74,7 @@
         }
         .stat-card .label { font-size: 0.8rem; color: var(--text-muted); text-transform: uppercase; }
         .stat-card .value { font-size: 1.4rem; font-weight: bold; color: var(--primary); margin-top: 5px;}
+        .stat-card .sub-value { font-size: 0.8rem; color: var(--text-muted); margin-top: 3px;}
 
         .breakdown-item {
             display: flex;
@@ -95,8 +96,15 @@
             <input type="range" id="computeNodes" min="1" max="100" value="5">
         </div>
         <div class="form-group">
-            <label>Storage Nodes <span class="val-display" id="valStorageNodes">3</span></label>
-            <input type="range" id="storageNodes" min="0" max="100" value="3">
+            <label>Storage Nodes <span class="val-display" id="valStorageNodes">5</span></label>
+            <input type="range" id="storageNodes" min="0" max="100" value="5">
+        </div>
+        <div class="form-group" style="background: #E6FCFF; padding: 10px; border-radius: 6px; border: 1px solid #B3F5FF; margin-top: 15px;">
+            <label style="color: var(--secondary);">Storage Redundancy Mode (Auto-Optimized)</label>
+            <select id="redundancyMode"></select>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 5px;">
+                Determines how much RAW capacity is lost to parity. Licenses are billed ONLY on Usable Capacity.
+            </div>
         </div>
 
         <h2 style="margin-top:25px;">Unit Economics</h2>
@@ -105,7 +113,7 @@
             <input type="number" id="coresPerNode" value="64">
         </div>
         <div class="form-group">
-            <label>Usable Capacity per Storage Node (TB) <span class="val-display"></span></label>
+            <label>RAW Capacity per Storage Node (TB) <span class="val-display"></span></label>
             <input type="number" id="tbPerNode" value="100">
         </div>
         <div class="form-group">
@@ -121,12 +129,8 @@
             <input type="number" id="coloCost" value="230">
         </div>
         <div class="form-group">
-            <label>Virtuozzo Storage License ($/TB/Mo) <span class="val-display"></span></label>
+            <label>Virtuozzo Storage License ($/Usable TB/Mo) <span class="val-display"></span></label>
             <input type="number" id="vzStorageLic" value="10">
-        </div>
-        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 15px;">
-            * Virtuozzo Compute License ($/Core) is automatically tiered based on total scale.<br>
-            * Staffing costs are automatically calculated using the standard step-function matrix.
         </div>
     </div>
 
@@ -139,20 +143,14 @@
 
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="label">Active Compute Tier Rate</div>
-                <div class="value" id="outActiveTier">$0.00 <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">/core</span></div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Effective Compute TCO</div>
-                <div class="value" id="outEffectiveCore">$0.00 <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">/core</span></div>
-            </div>
-            <div class="stat-card">
-                <div class="label">Total Compute Cores</div>
+                <div class="label">Compute: Total Cores</div>
                 <div class="value" id="outTotalCores">0</div>
+                <div class="sub-value" id="outActiveTier">Tier Rate: $0.00/core</div>
             </div>
             <div class="stat-card">
-                <div class="label">Total Usable Storage</div>
-                <div class="value" id="outTotalTB">0 TB</div>
+                <div class="label">Storage: Usable vs RAW</div>
+                <div class="value" id="outUsableTB" style="color: var(--vz-stor-color);">0 TB</div>
+                <div class="sub-value" id="outRawTB">from 0 TB RAW</div>
             </div>
         </div>
 
@@ -174,7 +172,7 @@
             <strong id="outVzComp">$0</strong>
         </div>
         <div class="breakdown-item" style="border-bottom: none;">
-            <div><span class="indicator" style="background: var(--vz-stor-color);"></span>VZ Storage Licensing</div>
+            <div><span class="indicator" style="background: var(--vz-stor-color);"></span>VZ Storage Licensing (Usable Only)</div>
             <strong id="outVzStor">$0</strong>
         </div>
     </div>
@@ -182,9 +180,72 @@
 
 <script>
     const formatCurrency = (num) => '$' + num.toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 0});
+    
+    // Redundancy Schema Database
+    const redundancyModes = [
+        { id: "r1", name: "1 Replica (No Redundancy)", factor: 1.0, minNodes: 1 },
+        { id: "r2", name: "2 Replicas", factor: 0.5, minNodes: 2 },
+        { id: "r3", name: "3 Replicas", factor: 0.333, minNodes: 3 },
+        { id: "ec21", name: "Erasure Coding (2+1)", factor: 0.666, minNodes: 3 },
+        { id: "ec32", name: "Erasure Coding (3+2)", factor: 0.60, minNodes: 5 },
+        { id: "ec52", name: "Erasure Coding (5+2)", factor: 0.714, minNodes: 7 },
+        { id: "ec72", name: "Erasure Coding (7+2)", factor: 0.777, minNodes: 9 }
+    ];
+
+    let userSelectedModeId = null;
+
+    function populateRedundancyDropdown() {
+        const storageNodes = parseInt(document.getElementById('storageNodes').value);
+        const select = document.getElementById('redundancyMode');
+        
+        // Save current selection if user explicitly picked it
+        if (select.value) userSelectedModeId = select.value;
+        
+        select.innerHTML = ''; // Clear options
+        
+        if (storageNodes === 0) {
+            select.innerHTML = '<option value="none">No Storage Nodes</option>';
+            return 0;
+        }
+
+        let bestRecommendedId = null;
+        let highestYield = 0;
+        let isValidUserSelection = false;
+
+        // Populate valid options based on node count
+        redundancyModes.forEach(mode => {
+            if (storageNodes >= mode.minNodes) {
+                const opt = document.createElement('option');
+                opt.value = mode.id;
+                opt.text = `${mode.name} - ${(mode.factor * 100).toFixed(0)}% Usable Yield`;
+                select.appendChild(opt);
+
+                // Check if previous user selection is still mathematically valid
+                if (mode.id === userSelectedModeId) isValidUserSelection = true;
+
+                // Determine default "Recommended" EC scheme (highest yield that isn't 1-Replica)
+                if (storageNodes >= 3 && mode.name.includes("Erasure") && mode.factor > highestYield) {
+                    highestYield = mode.factor;
+                    bestRecommendedId = mode.id;
+                } else if (storageNodes < 3 && mode.minNodes === storageNodes) {
+                    bestRecommendedId = mode.id;
+                }
+            }
+        });
+
+        // Auto-select logic
+        if (isValidUserSelection && userSelectedModeId) {
+            select.value = userSelectedModeId;
+        } else if (bestRecommendedId) {
+            select.value = bestRecommendedId;
+        }
+        
+        const selectedMode = redundancyModes.find(m => m.id === select.value);
+        return selectedMode ? selectedMode.factor : 0;
+    }
 
     function calculateTCO() {
-        // 1. Get Inputs
+        // 1. Get Base Inputs
         const computeNodes = parseFloat(document.getElementById('computeNodes').value);
         const storageNodes = parseFloat(document.getElementById('storageNodes').value);
         const coresPerNode = parseFloat(document.getElementById('coresPerNode').value);
@@ -198,49 +259,44 @@
         document.getElementById('valComputeNodes').innerText = computeNodes;
         document.getElementById('valStorageNodes').innerText = storageNodes;
 
-        // 2. Compute Tiers & Core Math
+        // 2. Storage Redundancy Logic
+        const yieldFactor = populateRedundancyDropdown();
+        const totalRawTB = storageNodes * tbPerNode;
+        const totalUsableTB = totalRawTB * yieldFactor;
+        const monthlyVzStor = totalUsableTB * vzStorageLic;
+
+        // 3. Compute Tiers & Core Math
         const totalCores = computeNodes * coresPerNode;
-        let tierRate = 10.00; // Pay-G fallback
+        let tierRate = 10.00;
         if (totalCores <= 200) tierRate = 9.40;
         else if (totalCores <= 250) tierRate = 8.80;
         else if (totalCores <= 500) tierRate = 7.90;
         else if (totalCores <= 1000) tierRate = 6.20;
         else tierRate = 5.00;
-
         const monthlyVzComp = totalCores * tierRate;
-
-        // 3. Storage Math
-        const totalTB = storageNodes * tbPerNode;
-        const monthlyVzStor = totalTB * vzStorageLic;
 
         // 4. Infrastructure & OPEX Math
         const totalNodes = computeNodes + storageNodes;
         const monthlyHw = ((computeNodes * hwCostCompute) + (storageNodes * hwCostStorage)) / 36;
         const monthlyColo = totalNodes * coloCost;
 
-        // 5. Staffing Step-Function Math (from XLS)
-        // Base FTE = $35k. Block sizes: 5 up to 20 nodes, then 7 up to 50+.
-        const staffAnnual = 35000 
+        // 5. Staffing Step-Function Math
+        const staffAnnual = totalNodes === 0 ? 0 : 35000 
             + Math.floor(Math.max(Math.min(totalNodes, 20) - 5, 0) / 5) * 14000 
             + Math.floor(Math.max(totalNodes - 20, 0) / 7) * 9800;
         const monthlyStaff = staffAnnual / 12;
 
-        // 6. Totals & Effective Costs
+        // 6. Totals
         const totalMo = monthlyHw + monthlyColo + monthlyVzComp + monthlyVzStor + monthlyStaff;
         
-        // Effective Compute Cost isolates compute hardware/colo to show true $/core/mo
-        const computeHwMo = (computeNodes * hwCostCompute) / 36;
-        const computeColoMo = computeNodes * coloCost;
-        // Allocating a proportional amount of staffing to compute based on node count
-        const computeStaffMo = monthlyStaff * (computeNodes / totalNodes || 0); 
-        const effectiveCoreCost = (computeHwMo + computeColoMo + monthlyVzComp + computeStaffMo) / totalCores;
-
         // 7. Render Updates
         document.getElementById('outTotalMo').innerText = formatCurrency(totalMo);
-        document.getElementById('outActiveTier').innerHTML = `$${tierRate.toFixed(2)} <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">/core</span>`;
-        document.getElementById('outEffectiveCore').innerHTML = `$${effectiveCoreCost.toFixed(2)} <span style="font-size: 0.8rem; font-weight: normal; color: var(--text-muted)">/core</span>`;
+        
         document.getElementById('outTotalCores').innerText = totalCores.toLocaleString();
-        document.getElementById('outTotalTB').innerText = totalTB.toLocaleString() + ' TB';
+        document.getElementById('outActiveTier').innerText = `Tier Rate: $${tierRate.toFixed(2)} / core`;
+        
+        document.getElementById('outUsableTB').innerText = totalUsableTB.toLocaleString(undefined, {maximumFractionDigits: 0}) + ' TB';
+        document.getElementById('outRawTB').innerText = `from ${totalRawTB.toLocaleString()} TB RAW`;
 
         document.getElementById('outHw').innerText = formatCurrency(monthlyHw);
         document.getElementById('outColo').innerText = formatCurrency(monthlyColo);
@@ -249,9 +305,15 @@
         document.getElementById('outVzStor').innerText = formatCurrency(monthlyVzStor);
     }
 
-    // Attach Listeners
+    // Event Listeners: Re-calculate on input
     document.querySelectorAll('input').forEach(input => {
         input.addEventListener('input', calculateTCO);
+    });
+    
+    // Explicitly handle dropdown changes to save user preference
+    document.getElementById('redundancyMode').addEventListener('change', function() {
+        userSelectedModeId = this.value;
+        calculateTCO();
     });
 
     // Init
